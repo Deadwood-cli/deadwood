@@ -1,0 +1,46 @@
+# Binaries
+/deadwood
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go build/test artifacts
+*.test
+*.out
+*.prof
+coverage.txt
+coverage.html
+
+# Go workspace / module cache leftovers
+go.work
+go.work.sum
+
+# goreleaser output
+/dist/
+
+# Local env / secrets (never commit tokens)
+.env
+.env.local
+*.pem
+*.key
+
+# Local config overrides used during manual testing
+.deadwood.local.yml
+
+# Fixture repos generated at test time (created fresh by testdata/fixtures/setup.sh)
+testdata/fixtures/tmp/
+testdata/fixtures/*.git/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Air / live-reload tooling, if used during dev
+tmp/
