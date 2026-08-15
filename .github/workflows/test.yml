@@ -1,0 +1,66 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The race detector needs a C toolchain, which is not reliably
+          # present on the Windows runner.
+          - os: ubuntu-latest
+            test-flags: -race
+          - os: macos-latest
+            test-flags: -race
+          - os: windows-latest
+            test-flags: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # internal/git integration tests shell out to real git, which refuses to
+      # commit without an identity.
+      - name: Configure git identity for fixture repos
+        run: |
+          git config --global user.name "deadwood-ci"
+          git config --global user.email "ci@deadwood.invalid"
+          git config --global init.defaultBranch main
+
+      - run: go build ./...
+
+      - run: go vet ./...
+
+      - run: go test ${{ matrix.test-flags }} ./...
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
