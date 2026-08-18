@@ -1,3 +1,6 @@
+// Package classify is the decision engine that assigns every local branch to a
+// bucket. It has no dependency on internal/git or internal/github: callers pass
+// plain structs, and tests drive it with fixtures.
 package classify
 
 import "time"
@@ -7,21 +10,28 @@ import "time"
 type Bucket string
 
 const (
-	BucketSafeDelete   Bucket = "safe_delete"   // remote gone, fully merged (ancestor) or no unique commits
-	BucketSquashMerged Bucket = "squash_merged" // remote gone, matched to a merged pull request
-	BucketNeedsReview  Bucket = "needs_review"  // remote gone, merge status could not be confirmed
-	BucketActive       Bucket = "active"        // remote still exists
-	BucketProtected    Bucket = "protected"     // current, worktree, stash, or excluded by config
+	// BucketSafeDelete is remote gone, fully merged (ancestor) or with no unique commits.
+	BucketSafeDelete Bucket = "safe_delete"
+	// BucketSquashMerged is remote gone, matched to a merged pull request.
+	BucketSquashMerged Bucket = "squash_merged"
+	// BucketNeedsReview is remote gone, merge status could not be confirmed.
+	BucketNeedsReview Bucket = "needs_review"
+	// BucketActive is a branch whose remote counterpart still exists.
+	BucketActive Bucket = "active"
+	// BucketProtected is current, in a worktree, stashed, or excluded by config.
+	BucketProtected Bucket = "protected"
 )
 
-// Confidence is surfaced in the UI. Protected and active outcomes are
-// unambiguous, so they report high even though the spec only spells out the
-// values for the remote-gone cases.
 const (
-	ConfidenceHigh   = "high"
+	// ConfidenceHigh is an unambiguous classification.
+	ConfidenceHigh = "high"
+	// ConfidenceMedium is a likely-safe classification with weaker evidence
+	// (no unique commits, but not a strict ancestor).
 	ConfidenceMedium = "medium"
-	ConfidenceLow    = "low"
-	ConfidenceNA     = "n/a"
+	// ConfidenceLow is reserved for a future weaker signal; unused in v0.1.
+	ConfidenceLow = "low"
+	// ConfidenceNA is reported when merge status could not be confirmed.
+	ConfidenceNA = "n/a"
 )
 
 // BranchInfo is the per-branch input to Classify. It is a plain value type so

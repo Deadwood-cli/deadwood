@@ -1,6 +1,3 @@
-// Package classify is the decision engine that assigns every local branch to a
-// bucket. It has no dependency on internal/git or internal/github: callers pass
-// plain structs, and tests drive it with fixtures.
 package classify
 
 import (
