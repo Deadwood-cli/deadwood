@@ -31,9 +31,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Deliberately not go-version-file. Go's linker only emits the LC_UUID
+      # load command by default from 1.24 (golang/go#68678), and the dyld on
+      # current macOS refuses to launch a binary without one, so a test binary
+      # built by the 1.22 declared in go.mod aborts before running. The
+      # minimum-go job below still holds us to that declared floor.
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: stable
           cache: true
 
       # internal/git integration tests shell out to real git, which refuses to
@@ -50,6 +55,30 @@ jobs:
 
       - run: go test ${{ matrix.test-flags }} ./...
 
+  # Proves the go directive in go.mod is a real floor rather than a claim.
+  # Linux only: the LC_UUID problem above makes older toolchains unrunnable on
+  # the macOS runner, and it is a property of Apple's loader, not our code.
+  minimum-go:
+    name: minimum go version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Configure git identity for fixture repos
+        run: |
+          git config --global user.name "deadwood-ci"
+          git config --global user.email "ci@deadwood.invalid"
+          git config --global init.defaultBranch main
+
+      - run: go build ./...
+
+      - run: go test ./...
+
   lint:
     name: lint
     runs-on: ubuntu-latest
@@ -58,7 +87,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: stable
           cache: true
 
       - uses: golangci/golangci-lint-action@v8

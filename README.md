@@ -77,6 +77,10 @@ deadwood auth status
 
 Requires Go 1.22 or newer and a system `git`.
 
+On macOS 15 or newer, build with Go 1.24+. Earlier toolchains omit the `LC_UUID` load command that
+Apple's loader now requires, so the binaries they produce refuse to start. Released binaries are
+unaffected.
+
 ```sh
 go build ./cmd/deadwood
 go test ./...
