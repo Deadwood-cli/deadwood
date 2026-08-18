@@ -1,0 +1,11 @@
+# gofmt always writes LF. Without this, editing on Windows produces CRLF files
+# that the formatter and the lint job reject wholesale.
+* text=auto eol=lf
+
+*.go   text eol=lf
+*.mod  text eol=lf
+*.sum  text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.sh   text eol=lf
