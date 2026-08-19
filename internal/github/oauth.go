@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	// EnvClientID overrides the compiled OAuth client ID, so login can be
-	// tested before the org OAuth App is registered.
+	// EnvClientID overrides the compiled OAuth client ID (useful in tests or
+	// when pointing a private build at a different OAuth App).
 	EnvClientID = "DEADWOOD_GITHUB_CLIENT_ID"
 
 	// Scope is the OAuth scope requested by device flow. Deadwood only reads
@@ -16,10 +16,9 @@ const (
 	Scope = "repo"
 )
 
-// OAuthClientID is the public GitHub OAuth App client ID. Device flow does not
-// use a client secret. Leave empty until the app is registered under the
-// Deadwood-cli org; login then requires DEADWOOD_GITHUB_CLIENT_ID.
-const OAuthClientID = ""
+// OAuthClientID is the public GitHub OAuth App client ID for the Deadwood-cli
+// org app. Device flow does not use a client secret. This is not a credential.
+const OAuthClientID = "Ov23li4w4WBJxsCJzb07"
 
 // ResolveClientID returns the public OAuth App client ID, preferring
 // DEADWOOD_GITHUB_CLIENT_ID over the compiled constant.
