@@ -74,8 +74,7 @@ func Classify(branch BranchInfo, remote RemoteStatus, pr PRStatus, defaultBranch
 }
 
 // matchesExclude reports whether name matches any configured glob. Invalid
-// patterns cannot match, so they never silently protect (or unprotect) a
-// branch; phase 7 is where a malformed config file fails loudly.
+// patterns cannot match; internal/config rejects them when loading YAML.
 func matchesExclude(name string, patterns []string) bool {
 	for _, pattern := range patterns {
 		ok, err := path.Match(pattern, name)

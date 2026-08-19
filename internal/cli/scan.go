@@ -9,6 +9,7 @@ import (
 
 	"github.com/Deadwood-cli/deadwood/internal/auth"
 	"github.com/Deadwood-cli/deadwood/internal/classify"
+	"github.com/Deadwood-cli/deadwood/internal/config"
 	"github.com/Deadwood-cli/deadwood/internal/git"
 	ghub "github.com/Deadwood-cli/deadwood/internal/github"
 	"github.com/Deadwood-cli/deadwood/internal/output"
@@ -78,7 +79,15 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions, deps 
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	report, err := buildScan(ctx, ".", classify.DefaultConfig(), deps, cmd.ErrOrStderr())
+	root, err := git.RepoRoot(".")
+	if err != nil {
+		return fmt.Errorf("not a git repository: %w", err)
+	}
+	cfg, err := config.Load(root, global.configPath)
+	if err != nil {
+		return err
+	}
+	report, err := buildScan(ctx, root, cfg, deps, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
@@ -88,7 +97,7 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions, deps 
 	})
 }
 
-func buildScan(ctx context.Context, repoPath string, cfg classify.Config, deps *scanDeps, warnings io.Writer) (output.Report, error) {
+func buildScan(ctx context.Context, repoPath string, cfg config.Config, deps *scanDeps, warnings io.Writer) (output.Report, error) {
 	if deps == nil {
 		deps = defaultScanDeps()
 	}
@@ -110,7 +119,8 @@ func buildScan(ctx context.Context, repoPath string, cfg classify.Config, deps *
 		return output.Report{}, err
 	}
 
-	defaultBranch, err := resolveDefaultBranch(ctx, root, repo, deps, warnings)
+	classCfg := cfg.Classify()
+	defaultBranch, err := resolveDefaultBranch(ctx, root, repo, deps, warnings, cfg.DefaultBranch)
 	if err != nil {
 		return output.Report{}, err
 	}
@@ -153,7 +163,7 @@ func buildScan(ctx context.Context, repoPath string, cfg classify.Config, deps *
 
 	for _, local := range locals {
 		_, remoteExists := remotes[local.Name]
-		excluded := excludedName(local.Name, cfg)
+		excluded := excludedName(local.Name, classCfg)
 		skipMerge := local.IsCurrent || inWorktree[local.Name] || stashed[local.Name] || remoteExists || excluded
 		info, err := classifyInfo(root, local, defaultBranch, inWorktree[local.Name], stashed[local.Name], skipMerge)
 		if err != nil {
@@ -180,7 +190,7 @@ func buildScan(ctx context.Context, repoPath string, cfg classify.Config, deps *
 		if match, ok := prs[item.local.Name]; ok {
 			pr = classify.PRStatus{Found: match.Found, Merged: match.Merged, Number: match.Number, MergedAt: match.MergedAt}
 		}
-		results = append(results, classify.Classify(item.info, classify.RemoteStatus{Exists: item.remoteExists}, pr, defaultBranch, cfg))
+		results = append(results, classify.Classify(item.info, classify.RemoteStatus{Exists: item.remoteExists}, pr, defaultBranch, classCfg))
 	}
 
 	return output.Report{
@@ -191,7 +201,18 @@ func buildScan(ctx context.Context, repoPath string, cfg classify.Config, deps *
 	}, nil
 }
 
-func resolveDefaultBranch(ctx context.Context, root string, repo ghub.Repo, deps *scanDeps, warnings io.Writer) (string, error) {
+func resolveDefaultBranch(ctx context.Context, root string, repo ghub.Repo, deps *scanDeps, warnings io.Writer, override string) (string, error) {
+	if override != "" {
+		exists, err := git.LocalBranchExists(root, override)
+		if err != nil {
+			return "", err
+		}
+		if !exists {
+			return "", fmt.Errorf("default_branch %q from config does not exist locally", override)
+		}
+		return override, nil
+	}
+
 	name, err := git.GetDefaultBranch(root)
 	if err == nil {
 		return name, nil
