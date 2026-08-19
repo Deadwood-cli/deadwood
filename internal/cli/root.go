@@ -64,6 +64,10 @@ func NewRootCommand(info BuildInfo) *cobra.Command {
 		newAuthCommand(global),
 	)
 
+	// `deadwood --json` must work the same as `deadwood scan --json`, because
+	// scan is the default command.
+	root.Flags().AddFlagSet(scan.LocalFlags())
+
 	// `deadwood` with no subcommand is equivalent to `deadwood scan`. Dispatch
 	// through the scan command itself so its own flags resolve correctly.
 	root.RunE = func(_ *cobra.Command, args []string) error {

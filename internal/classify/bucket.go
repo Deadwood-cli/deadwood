@@ -83,3 +83,18 @@ type BranchResult struct {
 type Config struct {
 	ExcludePatterns []string
 }
+
+// DefaultConfig returns the exclude patterns from spec Section 9. Used until
+// phase 7 loads .deadwood.yml; a missing config file must behave like this
+// rather than protecting nothing.
+func DefaultConfig() Config {
+	return Config{
+		ExcludePatterns: []string{
+			"main",
+			"master",
+			"develop",
+			"release/*",
+			"hotfix/*",
+		},
+	}
+}
