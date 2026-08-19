@@ -105,11 +105,8 @@ func TestVersionFlagReportsBuildInfo(t *testing.T) {
 // than failing, so the scaffold is safe to run.
 func TestStubbedCommandsReportTheirBuildPhase(t *testing.T) {
 	tests := map[string][]string{
-		"clean":       {"clean"},
-		"undo":        {"undo", "some-branch"},
-		"auth login":  {"auth", "login"},
-		"auth logout": {"auth", "logout"},
-		"auth status": {"auth", "status"},
+		"clean": {"clean"},
+		"undo":  {"undo", "some-branch"},
 	}
 
 	for name, args := range tests {
