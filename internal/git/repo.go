@@ -40,6 +40,11 @@ func GetDefaultBranch(repoPath string) (string, error) {
 	return name, nil
 }
 
+// OriginURL returns the URL configured for the origin remote.
+func OriginURL(repoPath string) (string, error) {
+	return run(repoPath, "remote", "get-url", remoteName)
+}
+
 // LocalBranchExists reports whether refs/heads/<branch> is present.
 func LocalBranchExists(repoPath, branch string) (bool, error) {
 	if err := validateRefArgument(branch); err != nil {

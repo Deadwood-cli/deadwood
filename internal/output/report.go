@@ -20,10 +20,11 @@ type Options struct {
 // Report is one scan's worth of classified branches.
 type Report struct {
 	DefaultBranch string
-	// LocalOnly is true when remotes and pull requests were not consulted
-	// (phase 4). Reasons that mention a deleted remote are therefore unverified.
+	// LocalOnly is true when remotes were not consulted.
 	LocalOnly bool
-	Results   []classify.BranchResult
+	// PRsChecked is true when squash-merge PR matching ran.
+	PRsChecked bool
+	Results    []classify.BranchResult
 }
 
 type bucketMeta struct {
@@ -89,6 +90,10 @@ func writeHuman(w io.Writer, report Report, verbose bool) error {
 		if _, err := fmt.Fprintln(w, "Remote branches and pull requests were not checked."); err != nil {
 			return err
 		}
+	} else if !report.PRsChecked {
+		if _, err := fmt.Fprintln(w, "Squash-merged detection skipped; run `deadwood auth login`."); err != nil {
+			return err
+		}
 	}
 	_, err := fmt.Fprintln(w, "Run `deadwood clean` to review and delete.")
 	return err
@@ -121,6 +126,7 @@ func writeVerbose(w io.Writer, results []classify.BranchResult) error {
 type jsonReport struct {
 	DefaultBranch string         `json:"default_branch"`
 	LocalOnly     bool           `json:"local_only"`
+	PRsChecked    bool           `json:"prs_checked"`
 	BranchCount   int            `json:"branch_count"`
 	Counts        map[string]int `json:"counts"`
 	Branches      []jsonBranch   `json:"branches"`
@@ -138,6 +144,7 @@ func writeJSON(w io.Writer, report Report) error {
 	payload := jsonReport{
 		DefaultBranch: report.DefaultBranch,
 		LocalOnly:     report.LocalOnly,
+		PRsChecked:    report.PRsChecked,
 		BranchCount:   len(report.Results),
 		Counts:        make(map[string]int, len(bucketOrder)),
 		Branches:      make([]jsonBranch, 0, len(report.Results)),

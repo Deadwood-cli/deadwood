@@ -1,10 +1,16 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"io"
+	"path"
 
+	"github.com/Deadwood-cli/deadwood/internal/auth"
 	"github.com/Deadwood-cli/deadwood/internal/classify"
 	"github.com/Deadwood-cli/deadwood/internal/git"
+	ghub "github.com/Deadwood-cli/deadwood/internal/github"
 	"github.com/Deadwood-cli/deadwood/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -14,16 +20,41 @@ type scanOptions struct {
 	json bool
 }
 
+type scanDeps struct {
+	originURL   func(repoPath string) (string, error)
+	listRemotes func(repoPath string) (map[string]struct{}, error)
+	store       *auth.Store
+	clientOpts  ghub.ClientOptions
+	mergedPRs   func(ctx context.Context, token string, repo ghub.Repo, branches []string) (map[string]ghub.PRMatch, error)
+	ghDefault   func(ctx context.Context, token string, repo ghub.Repo) (string, error)
+}
+
+func defaultScanDeps() *scanDeps {
+	opts := ghub.ClientOptions{}
+	return &scanDeps{
+		originURL:   git.OriginURL,
+		listRemotes: git.ListRemoteBranches,
+		store:       auth.DefaultStore(),
+		clientOpts:  opts,
+		mergedPRs: func(ctx context.Context, token string, repo ghub.Repo, branches []string) (map[string]ghub.PRMatch, error) {
+			return ghub.MergedPRs(ctx, ghub.NewClient(token, opts), repo, branches)
+		},
+		ghDefault: func(ctx context.Context, token string, repo ghub.Repo) (string, error) {
+			return ghub.RepoDefaultBranch(ctx, ghub.NewClient(token, opts), repo)
+		},
+	}
+}
+
 const scanLong = `Scan classifies every local branch into one of five buckets: safe to delete,
 squash-merged, needs review, active, or protected.
 
 scan is strictly read-only. It never prompts for deletion and never modifies the
-repository.
+repository.`
 
-Until GitHub wiring lands, this is a local-only scan: remotes and pull requests
-are not consulted, so no branch is reported as active or squash-merged.`
-
-func newScanCommand(global *globalOptions) *cobra.Command {
+func newScanCommand(global *globalOptions, deps *scanDeps) *cobra.Command {
+	if deps == nil {
+		deps = defaultScanDeps()
+	}
 	opts := &scanOptions{}
 
 	cmd := &cobra.Command{
@@ -32,7 +63,7 @@ func newScanCommand(global *globalOptions) *cobra.Command {
 		Long:  scanLong,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runScan(cmd, global, opts)
+			return runScan(cmd, global, opts, deps)
 		},
 	}
 
@@ -42,8 +73,12 @@ func newScanCommand(global *globalOptions) *cobra.Command {
 	return cmd
 }
 
-func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error {
-	report, err := buildScan(".", classify.DefaultConfig())
+func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions, deps *scanDeps) error {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	report, err := buildScan(ctx, ".", classify.DefaultConfig(), deps, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
@@ -53,26 +88,41 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 	})
 }
 
-// buildScan gathers local git metadata, classifies every branch, and returns a
-// report. RemoteStatus and PRStatus are stubbed empty: phase 4 does not talk
-// to remotes or GitHub, so Exists is false and no PR is ever matched.
-func buildScan(repoPath string, cfg classify.Config) (output.Report, error) {
+func buildScan(ctx context.Context, repoPath string, cfg classify.Config, deps *scanDeps, warnings io.Writer) (output.Report, error) {
+	if deps == nil {
+		deps = defaultScanDeps()
+	}
+
 	root, err := git.RepoRoot(repoPath)
 	if err != nil {
 		return output.Report{}, fmt.Errorf("not a git repository: %w", err)
 	}
 
-	defaultBranch, err := git.GetDefaultBranch(root)
+	origin, err := deps.originURL(root)
 	if err != nil {
-		return output.Report{}, fmt.Errorf(
-			"cannot determine the default branch: %w (run `git remote set-head origin -a` or wait for GitHub detection)",
-			err,
-		)
+		return output.Report{}, fmt.Errorf("reading origin URL: %w", err)
+	}
+	repo, err := ghub.ParseOriginURL(origin)
+	if err != nil {
+		if errors.Is(err, ghub.ErrNotGitHub) {
+			return output.Report{}, fmt.Errorf("v0.1 only supports GitHub; GitLab support is planned: %w", err)
+		}
+		return output.Report{}, err
+	}
+
+	defaultBranch, err := resolveDefaultBranch(ctx, root, repo, deps, warnings)
+	if err != nil {
+		return output.Report{}, err
 	}
 
 	locals, err := git.ListLocalBranches(root)
 	if err != nil {
 		return output.Report{}, err
+	}
+
+	remotes, err := deps.listRemotes(root)
+	if err != nil {
+		return output.Report{}, fmt.Errorf("listing remote branches: %w", err)
 	}
 
 	worktrees, err := git.ListWorktrees(root)
@@ -94,23 +144,111 @@ func buildScan(repoPath string, cfg classify.Config) (output.Report, error) {
 	}
 	stashed := git.BranchesWithStash(stashes, names)
 
-	results := make([]classify.BranchResult, 0, len(locals))
+	pending := make([]struct {
+		local        git.BranchInfo
+		info         classify.BranchInfo
+		remoteExists bool
+	}, 0, len(locals))
+	prNeed := make([]string, 0, len(locals))
+
 	for _, local := range locals {
-		info, err := classifyInfo(root, local, defaultBranch, inWorktree[local.Name], stashed[local.Name])
+		_, remoteExists := remotes[local.Name]
+		excluded := excludedName(local.Name, cfg)
+		skipMerge := local.IsCurrent || inWorktree[local.Name] || stashed[local.Name] || remoteExists || excluded
+		info, err := classifyInfo(root, local, defaultBranch, inWorktree[local.Name], stashed[local.Name], skipMerge)
 		if err != nil {
 			return output.Report{}, err
 		}
-		results = append(results, classify.Classify(info, classify.RemoteStatus{}, classify.PRStatus{}, defaultBranch, cfg))
+		if !remoteExists && !skipMerge && !info.IsAncestor {
+			prNeed = append(prNeed, local.Name)
+		}
+		pending = append(pending, struct {
+			local        git.BranchInfo
+			info         classify.BranchInfo
+			remoteExists bool
+		}{local: local, info: info, remoteExists: remoteExists})
+	}
+
+	prs, prsChecked, err := lookupPRs(ctx, deps, repo, prNeed, warnings)
+	if err != nil {
+		return output.Report{}, err
+	}
+
+	results := make([]classify.BranchResult, 0, len(pending))
+	for _, item := range pending {
+		pr := classify.PRStatus{}
+		if match, ok := prs[item.local.Name]; ok {
+			pr = classify.PRStatus{Found: match.Found, Merged: match.Merged, Number: match.Number, MergedAt: match.MergedAt}
+		}
+		results = append(results, classify.Classify(item.info, classify.RemoteStatus{Exists: item.remoteExists}, pr, defaultBranch, cfg))
 	}
 
 	return output.Report{
 		DefaultBranch: defaultBranch,
-		LocalOnly:     true,
+		LocalOnly:     false,
+		PRsChecked:    prsChecked,
 		Results:       results,
 	}, nil
 }
 
-func classifyInfo(repoPath string, local git.BranchInfo, defaultBranch string, hasWorktree, hasStash bool) (classify.BranchInfo, error) {
+func resolveDefaultBranch(ctx context.Context, root string, repo ghub.Repo, deps *scanDeps, warnings io.Writer) (string, error) {
+	name, err := git.GetDefaultBranch(root)
+	if err == nil {
+		return name, nil
+	}
+	if !errors.Is(err, git.ErrDefaultBranchUnknown) {
+		return "", err
+	}
+
+	token, tokErr := deps.store.Get()
+	if tokErr != nil {
+		return "", fmt.Errorf("cannot determine the default branch: %w (run `git remote set-head origin -a` or `deadwood auth login`)", err)
+	}
+	name, ghErr := deps.ghDefault(ctx, token.Value, repo)
+	if ghErr != nil {
+		return "", fmt.Errorf("cannot determine the default branch: %w", ghErr)
+	}
+	if token.FromEnv && warnings != nil {
+		fmt.Fprintf(warnings, "warning: using %s; this is less secure than the OS keychain\n", auth.EnvToken)
+	}
+	return name, nil
+}
+
+func lookupPRs(ctx context.Context, deps *scanDeps, repo ghub.Repo, branches []string, warnings io.Writer) (map[string]ghub.PRMatch, bool, error) {
+	if len(branches) == 0 {
+		return nil, true, nil
+	}
+	token, err := deps.store.Get()
+	if errors.Is(err, auth.ErrNotFound) {
+		if warnings != nil {
+			fmt.Fprintln(warnings, "warning: not logged in; squash-merged detection skipped. Run `deadwood auth login`.")
+		}
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if token.FromEnv && warnings != nil {
+		fmt.Fprintf(warnings, "warning: using %s; this is less secure than the OS keychain\n", auth.EnvToken)
+	}
+	matches, err := deps.mergedPRs(ctx, token.Value, repo, branches)
+	if err != nil {
+		return nil, false, err
+	}
+	return matches, true, nil
+}
+
+func excludedName(name string, cfg classify.Config) bool {
+	for _, pattern := range cfg.ExcludePatterns {
+		ok, err := path.Match(pattern, name)
+		if err == nil && ok {
+			return true
+		}
+	}
+	return false
+}
+
+func classifyInfo(repoPath string, local git.BranchInfo, defaultBranch string, hasWorktree, hasStash, skipMerge bool) (classify.BranchInfo, error) {
 	info := classify.BranchInfo{
 		Name:           local.Name,
 		IsCurrent:      local.IsCurrent,
@@ -122,9 +260,7 @@ func classifyInfo(repoPath string, local git.BranchInfo, defaultBranch string, h
 		UpstreamName:   local.UpstreamName,
 	}
 
-	// Protected checks do not read these fields, so skip the extra git calls
-	// for branches that cannot be deleted anyway.
-	if local.IsCurrent || hasWorktree || hasStash {
+	if skipMerge {
 		return info, nil
 	}
 
