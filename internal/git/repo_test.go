@@ -56,6 +56,18 @@ func TestGetDefaultBranchWithoutOriginHead(t *testing.T) {
 	assert.ErrorIs(t, err, ErrDefaultBranchUnknown)
 }
 
+func TestOriginURL(t *testing.T) {
+	t.Parallel()
+
+	r := newRepo(t)
+	bare := r.addOrigin(defaultBranchName)
+
+	got, err := OriginURL(r.dir)
+
+	require.NoError(t, err)
+	assert.Equal(t, filepath.ToSlash(bare), got)
+}
+
 func TestLocalBranchExists(t *testing.T) {
 	t.Parallel()
 

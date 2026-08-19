@@ -27,6 +27,22 @@ func TestWriteHumanSummary(t *testing.T) {
 	assert.NotContains(t, got, "feature-a")
 }
 
+func TestWriteHumanPRLookupSkipped(t *testing.T) {
+	t.Parallel()
+
+	report := sampleReport()
+	report.LocalOnly = false
+	report.PRsChecked = false
+
+	var buf bytes.Buffer
+	require.NoError(t, Write(&buf, report, Options{}))
+
+	got := buf.String()
+	assert.Contains(t, got, "Deadwood scan — 3 local branches")
+	assert.NotContains(t, got, "(local-only)")
+	assert.Contains(t, got, "Squash-merged detection skipped; run `deadwood auth login`.")
+}
+
 func TestWriteHumanVerboseListsEveryBranch(t *testing.T) {
 	t.Parallel()
 
