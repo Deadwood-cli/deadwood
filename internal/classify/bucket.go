@@ -79,14 +79,13 @@ type BranchResult struct {
 }
 
 // Config is the configuration Classify consults. YAML loading belongs to
-// internal/config (phase 7); this is only the fields the decision tree reads.
+// internal/config; this is only the fields the decision tree reads.
 type Config struct {
 	ExcludePatterns []string
 }
 
-// DefaultConfig returns the exclude patterns from spec Section 9. Used until
-// phase 7 loads .deadwood.yml; a missing config file must behave like this
-// rather than protecting nothing.
+// DefaultConfig returns the exclude patterns from spec Section 9. A missing
+// .deadwood.yml must behave like this rather than protecting nothing.
 func DefaultConfig() Config {
 	return Config{
 		ExcludePatterns: []string{

@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/Deadwood-cli/deadwood/internal/auth"
 	"github.com/Deadwood-cli/deadwood/internal/classify"
+	"github.com/Deadwood-cli/deadwood/internal/config"
 	ghub "github.com/Deadwood-cli/deadwood/internal/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,7 +44,7 @@ func TestBuildScanClassifiesWithRemotes(t *testing.T) {
 	r := localScanFixture(t)
 	var warnings bytes.Buffer
 
-	report, err := buildScan(context.Background(), r.dir, classify.DefaultConfig(), fixtureScanDeps(), &warnings)
+	report, err := buildScan(context.Background(), r.dir, config.Defaults(), fixtureScanDeps(), &warnings)
 	require.NoError(t, err)
 
 	assert.Equal(t, "main", report.DefaultBranch)
@@ -62,7 +64,7 @@ func TestBuildScanRemoteExistsIsActive(t *testing.T) {
 	r := localScanFixture(t)
 	r.git("push", "origin", "unmerged")
 
-	report, err := buildScan(context.Background(), r.dir, classify.DefaultConfig(), fixtureScanDeps(), ioDiscard())
+	report, err := buildScan(context.Background(), r.dir, config.Defaults(), fixtureScanDeps(), ioDiscard())
 	require.NoError(t, err)
 
 	got := bucketsByName(report.Results)
@@ -89,7 +91,7 @@ func TestBuildScanSquashMergedFromPR(t *testing.T) {
 		return out, nil
 	}
 
-	report, err := buildScan(context.Background(), r.dir, classify.DefaultConfig(), deps, ioDiscard())
+	report, err := buildScan(context.Background(), r.dir, config.Defaults(), deps, ioDiscard())
 	require.NoError(t, err)
 
 	assert.True(t, report.PRsChecked)
@@ -105,14 +107,14 @@ func TestBuildScanRejectsNonGitHubOrigin(t *testing.T) {
 		return "https://gitlab.com/org/repo.git", nil
 	}
 
-	_, err := buildScan(context.Background(), r.dir, classify.DefaultConfig(), deps, ioDiscard())
+	_, err := buildScan(context.Background(), r.dir, config.Defaults(), deps, ioDiscard())
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "only supports GitHub")
 }
 
 func TestBuildScanOutsideRepository(t *testing.T) {
-	_, err := buildScan(context.Background(), t.TempDir(), classify.DefaultConfig(), fixtureScanDeps(), ioDiscard())
+	_, err := buildScan(context.Background(), t.TempDir(), config.Defaults(), fixtureScanDeps(), ioDiscard())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a git repository")
 }
@@ -120,7 +122,7 @@ func TestBuildScanOutsideRepository(t *testing.T) {
 func TestBuildScanWithoutOriginHead(t *testing.T) {
 	r := newTestRepo(t)
 
-	_, err := buildScan(context.Background(), r.dir, classify.DefaultConfig(), fixtureScanDeps(), ioDiscard())
+	_, err := buildScan(context.Background(), r.dir, config.Defaults(), fixtureScanDeps(), ioDiscard())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot determine the default branch")
 }
@@ -139,7 +141,7 @@ func TestBuildScanDefaultBranchFromGitHub(t *testing.T) {
 		return "main", nil
 	}
 
-	report, err := buildScan(context.Background(), r.dir, classify.DefaultConfig(), deps, ioDiscard())
+	report, err := buildScan(context.Background(), r.dir, config.Defaults(), deps, ioDiscard())
 	require.NoError(t, err)
 	assert.Equal(t, "main", report.DefaultBranch)
 }
@@ -192,6 +194,122 @@ func TestNoSubcommandRunsScan(t *testing.T) {
 	stdout, _, err := runScanCLI(t, fixtureScanDeps())
 	require.NoError(t, err)
 	assert.Contains(t, stdout, "Deadwood scan —")
+}
+
+func TestBuildScanHonorsDefaultBranchOverride(t *testing.T) {
+	r := localScanFixture(t)
+	cfg := config.Defaults()
+	cfg.DefaultBranch = "merged"
+
+	report, err := buildScan(context.Background(), r.dir, cfg, fixtureScanDeps(), ioDiscard())
+	require.NoError(t, err)
+	assert.Equal(t, "merged", report.DefaultBranch)
+}
+
+func TestBuildScanUnknownDefaultBranchOverrideFails(t *testing.T) {
+	r := localScanFixture(t)
+	cfg := config.Defaults()
+	cfg.DefaultBranch = "does-not-exist"
+
+	_, err := buildScan(context.Background(), r.dir, cfg, fixtureScanDeps(), ioDiscard())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does-not-exist")
+}
+
+func TestBuildScanOverrideSkipsMissingOriginHead(t *testing.T) {
+	r := newTestRepo(t)
+	r.git("remote", "add", "origin", "https://github.com/Deadwood-cli/deadwood.git")
+	deps := fixtureScanDeps()
+	deps.listRemotes = func(string) (map[string]struct{}, error) {
+		return map[string]struct{}{"main": {}}, nil
+	}
+	cfg := config.Defaults()
+	cfg.DefaultBranch = "main"
+
+	report, err := buildScan(context.Background(), r.dir, cfg, deps, ioDiscard())
+	require.NoError(t, err)
+	assert.Equal(t, "main", report.DefaultBranch)
+}
+
+func TestBuildScanCustomExcludePatterns(t *testing.T) {
+	r := localScanFixture(t)
+	cfg := config.Defaults()
+	cfg.ExcludePatterns = []string{"unmerged"}
+
+	report, err := buildScan(context.Background(), r.dir, cfg, fixtureScanDeps(), ioDiscard())
+	require.NoError(t, err)
+
+	got := bucketsByName(report.Results)
+	assert.Equal(t, classify.BucketProtected, got["unmerged"])
+	assert.Equal(t, classify.BucketSafeDelete, got["merged"])
+}
+
+func TestScanCommandLoadsRepoConfig(t *testing.T) {
+	r := localScanFixture(t)
+	writeConfig(t, r.dir, `
+exclude_patterns:
+  - main
+  - master
+  - develop
+  - release/*
+  - hotfix/*
+  - unmerged
+`)
+	chdir(t, r.dir)
+
+	stdout, _, err := runScanCLI(t, fixtureScanDeps(), "scan", "--json")
+	require.NoError(t, err)
+
+	var payload struct {
+		Counts map[string]int `json:"counts"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &payload))
+	assert.Equal(t, 0, payload.Counts["needs_review"])
+	assert.Equal(t, 4, payload.Counts["protected"])
+}
+
+func TestScanCommandMalformedConfigFails(t *testing.T) {
+	r := localScanFixture(t)
+	writeConfig(t, r.dir, "exclude_patterns: [\n")
+	chdir(t, r.dir)
+
+	_, _, err := runScanCLI(t, fixtureScanDeps(), "scan")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "malformed config file")
+}
+
+func TestScanCommandMissingOverrideConfigFails(t *testing.T) {
+	r := localScanFixture(t)
+	chdir(t, r.dir)
+
+	missing := filepath.Join(t.TempDir(), "nope.yml")
+	_, _, err := runScanCLI(t, fixtureScanDeps(), "scan", "--config", missing)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "config file")
+}
+
+func TestScanCommandConfigFlagOverridesRepoFile(t *testing.T) {
+	r := localScanFixture(t)
+	writeConfig(t, r.dir, "exclude_patterns: [\"unmerged\"]\n")
+	other := filepath.Join(t.TempDir(), "other.yml")
+	require.NoError(t, os.WriteFile(other, []byte("exclude_patterns: []\n"), 0o600))
+	chdir(t, r.dir)
+
+	stdout, _, err := runScanCLI(t, fixtureScanDeps(), "scan", "--json", "--config", other)
+	require.NoError(t, err)
+
+	var payload struct {
+		Counts map[string]int `json:"counts"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &payload))
+	assert.Equal(t, 2, payload.Counts["needs_review"])
+	assert.Equal(t, 2, payload.Counts["protected"], "main (current) and stashed; defaults were not merged")
+}
+
+func writeConfig(t *testing.T, repoDir, body string) {
+	t.Helper()
+	path := filepath.Join(repoDir, config.FileName)
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 }
 
 func runScanCLI(t *testing.T, sd *scanDeps, args ...string) (stdout, stderr string, err error) {
