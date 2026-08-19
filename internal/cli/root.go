@@ -34,10 +34,10 @@ subcommand performs a read-only scan.`
 // NewRootCommand builds the complete command tree. It is exported so tests can
 // exercise the tree without going through os.Args.
 func NewRootCommand(info BuildInfo) *cobra.Command {
-	return newRootCommand(info, defaultAuthRuntime(), defaultScanDeps())
+	return newRootCommand(info, defaultAuthRuntime(), defaultScanDeps(), nil)
 }
 
-func newRootCommand(info BuildInfo, ar *authRuntime, sd *scanDeps) *cobra.Command {
+func newRootCommand(info BuildInfo, ar *authRuntime, sd *scanDeps, cd *cleanDeps) *cobra.Command {
 	if ar == nil {
 		ar = defaultAuthRuntime()
 	}
@@ -69,7 +69,7 @@ func newRootCommand(info BuildInfo, ar *authRuntime, sd *scanDeps) *cobra.Comman
 	scan := newScanCommand(global, sd)
 	root.AddCommand(
 		scan,
-		newCleanCommand(global),
+		newCleanCommand(global, sd, cd),
 		newUndoCommand(global),
 		newAuthCommand(global, ar),
 	)

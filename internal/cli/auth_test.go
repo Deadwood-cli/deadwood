@@ -19,7 +19,7 @@ import (
 func runAuth(t *testing.T, runtime *authRuntime, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 
-	root := newRootCommand(testBuildInfo(), runtime, nil)
+	root := newRootCommand(testBuildInfo(), runtime, nil, nil)
 	var out, errOut bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&errOut)
