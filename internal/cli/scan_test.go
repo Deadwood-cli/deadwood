@@ -314,7 +314,7 @@ func writeConfig(t *testing.T, repoDir, body string) {
 
 func runScanCLI(t *testing.T, sd *scanDeps, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
-	root := newRootCommand(testBuildInfo(), defaultAuthRuntime(), sd)
+	root := newRootCommand(testBuildInfo(), defaultAuthRuntime(), sd, nil)
 	var out, errOut bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&errOut)

@@ -104,19 +104,10 @@ func TestVersionFlagReportsBuildInfo(t *testing.T) {
 // Until their owning phases land, the subcommands announce themselves rather
 // than failing, so the scaffold is safe to run.
 func TestStubbedCommandsReportTheirBuildPhase(t *testing.T) {
-	tests := map[string][]string{
-		"clean": {"clean"},
-		"undo":  {"undo", "some-branch"},
-	}
+	_, stderr, err := run(t, "undo", "some-branch")
 
-	for name, args := range tests {
-		t.Run(name, func(t *testing.T) {
-			_, stderr, err := run(t, args...)
-
-			require.NoError(t, err)
-			assert.Contains(t, stderr, "not implemented yet (build phase ")
-		})
-	}
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "not implemented yet (build phase 9)")
 }
 
 func TestUnknownCommandFails(t *testing.T) {
