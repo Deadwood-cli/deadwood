@@ -8,8 +8,9 @@ import (
 )
 
 // ErrNotGitHub reports that origin does not point at github.com. v0.1 does
-// not silently no-op on other hosts.
-var ErrNotGitHub = errors.New("Deadwood v0.1 only supports GitHub. GitLab support is planned.")
+// not silently no-op on other hosts. The CLI prints the spec Section 7.2
+// sentence when this error is returned.
+var ErrNotGitHub = errors.New("origin remote is not GitHub")
 
 // Repo is the owner/name pair GitHub's API uses.
 type Repo struct {

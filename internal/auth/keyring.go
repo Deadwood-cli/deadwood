@@ -28,8 +28,11 @@ var ErrNotFound = errors.New("no GitHub token found")
 // keychain; tests use an in-memory implementation so they never touch the
 // real one.
 type Ring interface {
+	// Get returns the stored secret, or keyring.ErrNotFound if absent.
 	Get(service, user string) (string, error)
+	// Set writes the secret.
 	Set(service, user, password string) error
+	// Delete removes the secret.
 	Delete(service, user string) error
 }
 

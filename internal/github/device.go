@@ -192,7 +192,7 @@ func (f *DeviceFlow) postForm(ctx context.Context, endpoint string, form url.Val
 	if err != nil {
 		return fmt.Errorf("GitHub device flow: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {

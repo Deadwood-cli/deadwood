@@ -52,7 +52,7 @@ func newAuthCommand(_ *globalOptions, runtime *authRuntime) *cobra.Command {
 	cmd.AddCommand(
 		&cobra.Command{
 			Use:   "login",
-			Short: "Authorise deadwood with GitHub via device flow",
+			Short: "Authorize deadwood with GitHub via device flow",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, _ []string) error {
 				return runAuthLogin(cmd, runtime)
