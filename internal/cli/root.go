@@ -34,6 +34,10 @@ subcommand performs a read-only scan.`
 // NewRootCommand builds the complete command tree. It is exported so tests can
 // exercise the tree without going through os.Args.
 func NewRootCommand(info BuildInfo) *cobra.Command {
+	return newRootCommand(info, defaultAuthRuntime())
+}
+
+func newRootCommand(info BuildInfo, ar *authRuntime) *cobra.Command {
 	global := &globalOptions{}
 
 	root := &cobra.Command{
@@ -61,7 +65,7 @@ func NewRootCommand(info BuildInfo) *cobra.Command {
 		scan,
 		newCleanCommand(global),
 		newUndoCommand(global),
-		newAuthCommand(global),
+		newAuthCommand(global, ar),
 	)
 
 	// `deadwood --json` must work the same as `deadwood scan --json`, because
