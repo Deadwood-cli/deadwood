@@ -41,11 +41,11 @@ var bucketOrder = []classify.Bucket{
 }
 
 var bucketMetaBy = map[classify.Bucket]bucketMeta{
-	classify.BucketSafeDelete:   {emoji: "✅", label: "Safe to delete"},
-	classify.BucketSquashMerged: {emoji: "🟡", label: "Squash-merged"},
-	classify.BucketNeedsReview:  {emoji: "⚠️ ", label: "Needs review"},
-	classify.BucketActive:       {emoji: "🔵", label: "Active (remote live)"},
-	classify.BucketProtected:    {emoji: "🔒", label: "Protected"},
+	classify.BucketSafeDelete:   {emoji: "✓", label: "Safe to delete"},
+	classify.BucketSquashMerged: {emoji: "◆", label: "Squash-merged"},
+	classify.BucketNeedsReview:  {emoji: "▲", label: "Needs review"},
+	classify.BucketActive:       {emoji: "●", label: "Active (remote live)"},
+	classify.BucketProtected:    {emoji: "■", label: "Protected"},
 }
 
 // Write prints the report to w. JSON is a complete dump of every branch;

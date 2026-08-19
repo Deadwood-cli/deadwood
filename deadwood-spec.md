@@ -293,11 +293,11 @@ and HTTPS (`https://github.com/owner/repo.git`) forms. If origin is not a GitHub
   ```
   Deadwood scan — 214 local branches
 
-    ✅ Safe to delete       142
-    🟡 Squash-merged        31
-    ⚠️  Needs review         12
-    🔵 Active (remote live)  25
-    🔒 Protected              4
+    ✓ Safe to delete       142
+    ◆ Squash-merged        31
+    ▲ Needs review         12
+    ● Active (remote live)  25
+    ■ Protected              4
 
   Run `deadwood clean` to review and delete.
   ```
