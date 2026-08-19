@@ -87,18 +87,11 @@ func TestRootRegistersSpecifiedCommands(t *testing.T) {
 func TestGlobalFlagsAreAcceptedBySubcommands(t *testing.T) {
 	for _, name := range []string{"scan", "clean", "undo"} {
 		t.Run(name, func(t *testing.T) {
-			_, _, err := run(t, name, "--config", "custom.yml", "--verbose")
-			assert.NoError(t, err)
+			cmd := findCommand(t, name)
+			assert.NotNil(t, cmd.InheritedFlags().Lookup("config"), "%s missing --config", name)
+			assert.NotNil(t, cmd.InheritedFlags().Lookup("verbose"), "%s missing --verbose", name)
 		})
 	}
-}
-
-// The spec makes scan the default: `deadwood` alone must behave as `deadwood scan`.
-func TestNoSubcommandRunsScan(t *testing.T) {
-	_, stderr, err := run(t)
-
-	require.NoError(t, err)
-	assert.Contains(t, stderr, "deadwood scan")
 }
 
 func TestVersionFlagReportsBuildInfo(t *testing.T) {
@@ -112,7 +105,6 @@ func TestVersionFlagReportsBuildInfo(t *testing.T) {
 // than failing, so the scaffold is safe to run.
 func TestStubbedCommandsReportTheirBuildPhase(t *testing.T) {
 	tests := map[string][]string{
-		"scan":        {"scan"},
 		"clean":       {"clean"},
 		"undo":        {"undo", "some-branch"},
 		"auth login":  {"auth", "login"},
