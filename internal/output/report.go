@@ -40,12 +40,18 @@ var bucketOrder = []classify.Bucket{
 	classify.BucketProtected,
 }
 
+const (
+	ansiReset   = "\x1b[0m"
+	ansiSkyBlue = "\x1b[38;2;56;168;255m"
+)
+
 var bucketMetaBy = map[classify.Bucket]bucketMeta{
-	classify.BucketSafeDelete:   {emoji: "✓", label: "Safe to delete"},
-	classify.BucketSquashMerged: {emoji: "◆", label: "Squash-merged"},
-	classify.BucketNeedsReview:  {emoji: "▲", label: "Needs review"},
-	classify.BucketActive:       {emoji: "●", label: "Active (remote live)"},
-	classify.BucketProtected:    {emoji: "■", label: "Protected"},
+	classify.BucketSafeDelete:   {emoji: "✅", label: "Safe to delete"},
+	classify.BucketSquashMerged: {emoji: "🟥", label: "Squash-merged"},
+	classify.BucketNeedsReview:  {emoji: "⚠️", label: "Needs review"},
+	// FE0E forces text presentation so the bolt takes the terminal color instead of staying yellow emoji.
+	classify.BucketActive:    {emoji: ansiSkyBlue + "⚡\uFE0E" + ansiReset, label: "Active (remote live)"},
+	classify.BucketProtected: {emoji: "🔒", label: "Protected"},
 }
 
 // Write prints the report to w. JSON is a complete dump of every branch;
