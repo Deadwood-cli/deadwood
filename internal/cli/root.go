@@ -92,14 +92,3 @@ func newRootCommand(info BuildInfo, ar *authRuntime, sd *scanDeps, cd *cleanDeps
 func Execute(info BuildInfo) error {
 	return NewRootCommand(info).Execute()
 }
-
-// notImplemented is the placeholder body for a command whose build phase has
-// not landed yet. Each is replaced by the real implementation in the phase that
-// owns it (deadwood-spec.md Section 12).
-func notImplemented(phase int) func(*cobra.Command, []string) error {
-	return func(cmd *cobra.Command, _ []string) error {
-		fmt.Fprintf(cmd.ErrOrStderr(),
-			"%s: not implemented yet (build phase %d)\n", cmd.CommandPath(), phase)
-		return nil
-	}
-}

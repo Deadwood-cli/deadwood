@@ -27,15 +27,39 @@ func TestCleanYesDryRunDoesNotDelete(t *testing.T) {
 	r.git("show-ref", "--verify", "refs/heads/merged")
 }
 
-func TestCleanDryRunFalseStillDoesNotDelete(t *testing.T) {
+func TestCleanDryRunFalseDeletesMerged(t *testing.T) {
+	r := localScanFixture(t)
+	chdir(t, r.dir)
+	tip := r.git("rev-parse", "refs/heads/merged")
+
+	stdout, _, err := runCleanCLI(t, fixtureScanDeps(), nil, "", "clean", "--yes", "--dry-run=false")
+	require.NoError(t, err)
+	assert.Contains(t, stdout, "Deleted 1 branch")
+	assert.Contains(t, stdout, "merged")
+	assert.Contains(t, stdout, "refs/deadwood-backup/merged")
+	assert.Contains(t, stdout, "deadwood undo")
+	assert.NotContains(t, stdout, "Dry-run:")
+	assert.False(t, r.hasRef("refs/heads/merged"))
+	assert.True(t, r.hasRef("refs/deadwood-backup/merged"))
+
+	stdout, _, err = runUndoCLI(t, "undo", "merged")
+	require.NoError(t, err)
+	assert.Contains(t, stdout, "Restored merged")
+	assert.True(t, r.hasRef("refs/heads/merged"))
+	assert.Equal(t, tip, r.git("rev-parse", "refs/heads/merged"))
+}
+
+func TestCleanSkipsUnmergedRatherThanForceDeleting(t *testing.T) {
 	r := localScanFixture(t)
 	chdir(t, r.dir)
 
-	stdout, stderr, err := runCleanCLI(t, fixtureScanDeps(), nil, "", "clean", "--yes", "--dry-run=false")
+	stdout, _, err := runCleanCLI(t, fixtureScanDeps(), nil, "", "clean", "--yes", "--dry-run=false", "--include-needs-review")
 	require.NoError(t, err)
-	assert.Contains(t, stderr, "real deletion is not enabled yet")
-	assert.Contains(t, stdout, "Dry-run:")
-	r.git("show-ref", "--verify", "refs/heads/merged")
+	assert.Contains(t, stdout, "Deleted 1 branch")
+	assert.Contains(t, stdout, "Skipped 1 branch")
+	assert.Contains(t, stdout, "unmerged")
+	assert.True(t, r.hasRef("refs/heads/unmerged"))
+	assert.False(t, r.hasRef("refs/heads/merged"))
 }
 
 func TestCleanIncludeNeedsReviewPrechecks(t *testing.T) {

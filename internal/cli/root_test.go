@@ -101,15 +101,6 @@ func TestVersionFlagReportsBuildInfo(t *testing.T) {
 	assert.Equal(t, "deadwood 0.0.0-test (commit deadbee, built 2026-01-01)\n", stdout)
 }
 
-// Until their owning phases land, the subcommands announce themselves rather
-// than failing, so the scaffold is safe to run.
-func TestStubbedCommandsReportTheirBuildPhase(t *testing.T) {
-	_, stderr, err := run(t, "undo", "some-branch")
-
-	require.NoError(t, err)
-	assert.Contains(t, stderr, "not implemented yet (build phase 9)")
-}
-
 func TestUnknownCommandFails(t *testing.T) {
 	_, _, err := run(t, "delete-everything")
 
