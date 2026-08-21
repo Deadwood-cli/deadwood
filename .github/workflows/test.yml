@@ -94,7 +94,9 @@ jobs:
       # Pin the peeled commit SHA of the annotated v9.3.0 tag, not the tag object.
       # verify defaults to true and runs `golangci-lint config verify`, which
       # downloads a JSON schema from golangci-lint.run and times out in CI.
+      # v2.1.6 was built with Go 1.24 and panics type-checking the Go 1.27
+      # stdlib from setup-go's `stable` toolchain.
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: v2.1.6
+          version: v2.13.1
           verify: false
