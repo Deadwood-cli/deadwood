@@ -93,7 +93,7 @@ func newTestRepo(t *testing.T) *testRepo {
 
 func (r *testRepo) git(args ...string) string {
 	r.t.Helper()
-	cmd := exec.Command(fixtureGit(), append([]string{"-C", r.dir}, args...)...)
+	cmd := exec.Command(fixtureGit(), append([]string{"-C", r.dir}, args...)...) //nolint:gosec // test fixture; argv slice
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -124,7 +124,7 @@ func (r *testRepo) branchWithCommit(branch, message string) {
 
 func (r *testRepo) hasRef(ref string) bool {
 	r.t.Helper()
-	cmd := exec.Command(fixtureGit(), "-C", r.dir, "show-ref", "--verify", "--quiet", ref)
+	cmd := exec.Command(fixtureGit(), "-C", r.dir, "show-ref", "--verify", "--quiet", ref) //nolint:gosec // test fixture; argv slice
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C")
 	return cmd.Run() == nil
 }
@@ -137,7 +137,7 @@ func (r *testRepo) mergeNoFF(branch string) {
 func (r *testRepo) addOriginAndHead() {
 	r.t.Helper()
 	bare := filepath.Join(r.t.TempDir(), "origin.git")
-	cmd := exec.Command(fixtureGit(), "init", "--bare", "--initial-branch=main", bare)
+	cmd := exec.Command(fixtureGit(), "init", "--bare", "--initial-branch=main", bare) //nolint:gosec // test fixture; argv slice
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		r.t.Fatalf("fixture: bare origin: %v: %s", err, out)
