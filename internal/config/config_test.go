@@ -19,9 +19,10 @@ func TestDefaultsMatchSpecSection9(t *testing.T) {
 }
 
 func TestLoadMissingFileUsesDefaults(t *testing.T) {
-	cfg, err := Load(t.TempDir(), "")
+	got, err := Load(t.TempDir(), "")
 	require.NoError(t, err)
-	assert.Equal(t, Defaults(), cfg)
+	assert.Equal(t, Defaults(), got.Config)
+	assert.Empty(t, got.Path)
 }
 
 func TestLoadTable(t *testing.T) {
@@ -126,7 +127,8 @@ default_branch: trunk
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tc.want, got)
+			assert.Equal(t, tc.want, got.Config)
+			assert.Equal(t, path, got.Path)
 		})
 	}
 }
@@ -138,8 +140,9 @@ func TestLoadExplicitPath(t *testing.T) {
 
 	got, err := Load(t.TempDir(), path)
 	require.NoError(t, err)
-	assert.Equal(t, "trunk", got.DefaultBranch)
-	assert.Equal(t, Defaults().ExcludePatterns, got.ExcludePatterns)
+	assert.Equal(t, "trunk", got.Config.DefaultBranch)
+	assert.Equal(t, Defaults().ExcludePatterns, got.Config.ExcludePatterns)
+	assert.Equal(t, path, got.Path)
 }
 
 func TestLoadExplicitPathMissingFails(t *testing.T) {

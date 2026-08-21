@@ -199,9 +199,33 @@ func (f *DeviceFlow) postForm(ctx context.Context, endpoint string, form url.Val
 		return fmt.Errorf("reading GitHub device flow response: %w", err)
 	}
 	if err := json.Unmarshal(body, dest); err != nil {
+		if !statusOK(resp.StatusCode) {
+			return fmt.Errorf("GitHub device flow: HTTP %d", resp.StatusCode)
+		}
 		return fmt.Errorf("decoding GitHub device flow response: %w", err)
 	}
-	return nil
+	if statusOK(resp.StatusCode) {
+		return nil
+	}
+	if oauthErrorPresent(dest) {
+		return nil
+	}
+	return fmt.Errorf("GitHub device flow: HTTP %d", resp.StatusCode)
+}
+
+func statusOK(code int) bool {
+	return code >= 200 && code < 300
+}
+
+func oauthErrorPresent(dest any) bool {
+	switch v := dest.(type) {
+	case *deviceCodeResponse:
+		return v.Error != ""
+	case *tokenResponse:
+		return v.Error != "" || v.AccessToken != ""
+	default:
+		return false
+	}
 }
 
 func (f *DeviceFlow) codeURL() string {

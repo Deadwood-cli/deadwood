@@ -81,6 +81,11 @@ use it on its own repo.
 - Do not require signed commits or a minimum number of approvals for now (solo project) — revisit if/when
   collaborators join
 
+### 4b. Release tags (configure once, in GitHub repo settings → Rules / Tags)
+
+Protect `v*` tags so only trusted actors can create them. goreleaser publishes binaries from any `v*`
+tag push; a stolen tag is a supply-chain incident. Prefer SHA-pinned Actions (see `.github/workflows`).
+
 ## 5. Commit conventions
 
 - Conventional commit style: `feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `chore:`.

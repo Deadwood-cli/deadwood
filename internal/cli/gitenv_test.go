@@ -6,8 +6,26 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
+
+var (
+	fixtureGitOnce sync.Once
+	fixtureGitPath string
+)
+
+func fixtureGit() string {
+	fixtureGitOnce.Do(func() {
+		path, err := exec.LookPath("git")
+		if err != nil {
+			fixtureGitPath = "git"
+			return
+		}
+		fixtureGitPath = path
+	})
+	return fixtureGitPath
+}
 
 // TestMain points git at an empty configuration file so fixture repos created
 // by this package are not affected by the developer's global git config
@@ -75,7 +93,7 @@ func newTestRepo(t *testing.T) *testRepo {
 
 func (r *testRepo) git(args ...string) string {
 	r.t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", r.dir}, args...)...)
+	cmd := exec.Command(fixtureGit(), append([]string{"-C", r.dir}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -106,7 +124,7 @@ func (r *testRepo) branchWithCommit(branch, message string) {
 
 func (r *testRepo) hasRef(ref string) bool {
 	r.t.Helper()
-	cmd := exec.Command("git", "-C", r.dir, "show-ref", "--verify", "--quiet", ref)
+	cmd := exec.Command(fixtureGit(), "-C", r.dir, "show-ref", "--verify", "--quiet", ref)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C")
 	return cmd.Run() == nil
 }
@@ -119,7 +137,7 @@ func (r *testRepo) mergeNoFF(branch string) {
 func (r *testRepo) addOriginAndHead() {
 	r.t.Helper()
 	bare := filepath.Join(r.t.TempDir(), "origin.git")
-	cmd := exec.Command("git", "init", "--bare", "--initial-branch=main", bare)
+	cmd := exec.Command(fixtureGit(), "init", "--bare", "--initial-branch=main", bare)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		r.t.Fatalf("fixture: bare origin: %v: %s", err, out)

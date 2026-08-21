@@ -13,11 +13,44 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
+	"runtime"
 	"strings"
+	"sync"
+	"unicode"
 )
 
-// binary is the git executable to invoke, resolved through PATH.
-const binary = "git"
+const fallbackGit = "git"
+
+var (
+	gitPathOnce sync.Once
+	gitPath     string
+
+	// secretPattern matches common GitHub token prefixes so they never appear
+	// in CommandError output if a credential helper echoes them to stderr.
+	secretPattern = regexp.MustCompile(`(?i)\b(?:gh[pousr]_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]{8,})`)
+)
+
+// gitBinary is the git executable to invoke, resolved through PATH once.
+func gitBinary() string {
+	gitPathOnce.Do(func() {
+		names := []string{fallbackGit}
+		if runtime.GOOS == "windows" {
+			// Prefer git.exe over git.cmd; the latter is a cmd.exe wrapper that
+			// can hang when stdin is a pipe.
+			names = []string{"git.exe", fallbackGit}
+		}
+		for _, name := range names {
+			path, err := exec.LookPath(name)
+			if err == nil {
+				gitPath = path
+				return
+			}
+		}
+		gitPath = fallbackGit
+	})
+	return gitPath
+}
 
 // CommandError describes a git invocation that ran to completion and reported
 // failure. Errors from git failing to start are returned unwrapped instead.
@@ -32,7 +65,7 @@ func (e *CommandError) Error() string {
 	if detail == "" {
 		detail = fmt.Sprintf("exit status %d", e.ExitCode)
 	}
-	return fmt.Sprintf("git %s: %s", strings.Join(e.Args, " "), detail)
+	return fmt.Sprintf("git %s: %s", strings.Join(e.Args, " "), redactSecrets(detail))
 }
 
 // exitCodeOf reports the exit status behind err when git ran and failed. Git
@@ -56,15 +89,29 @@ func stderrContains(err error, text string) bool {
 	return strings.Contains(strings.ToLower(cmdErr.Stderr), strings.ToLower(text))
 }
 
+func redactSecrets(s string) string {
+	return secretPattern.ReplaceAllString(s, "[redacted]")
+}
+
 // run invokes git inside repoPath and returns stdout with trailing newlines
-// stripped.
+// stripped. Read-only commands skip optional index locks.
 func run(repoPath string, args ...string) (string, error) {
+	return runWith(repoPath, false, args...)
+}
+
+// runMutating is run for commands that update refs. It does not set
+// GIT_OPTIONAL_LOCKS=0, so ref updates take their required locks.
+func runMutating(repoPath string, args ...string) (string, error) {
+	return runWith(repoPath, true, args...)
+}
+
+func runWith(repoPath string, mutating bool, args ...string) (string, error) {
 	full := make([]string, 0, len(args)+3)
 	full = append(full, "-C", repoPath, "--no-pager")
 	full = append(full, args...)
 
-	cmd := exec.Command(binary, full...)
-	cmd.Env = commandEnv()
+	cmd := exec.Command(gitBinary(), full...)
+	cmd.Env = commandEnv(mutating)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -76,7 +123,7 @@ func run(repoPath string, args ...string) (string, error) {
 			return "", &CommandError{
 				Args:     full,
 				ExitCode: exitErr.ExitCode(),
-				Stderr:   stderr.String(),
+				Stderr:   redactSecrets(stderr.String()),
 			}
 		}
 		return "", fmt.Errorf("running git %s: %w", strings.Join(full, " "), err)
@@ -86,16 +133,50 @@ func run(repoPath string, args ...string) (string, error) {
 }
 
 // commandEnv keeps git non-interactive and its output stable enough to parse.
-func commandEnv() []string {
-	return append(os.Environ(),
-		// A scan must never block waiting for a password prompt.
+// DEADWOOD_GITHUB_TOKEN is stripped so a GitHub credential never leaks into
+// child git processes that do not need it.
+func commandEnv(mutating bool) []string {
+	var incomingCeiling string
+	env := make([]string, 0, 16)
+	for _, kv := range os.Environ() {
+		key, value, ok := strings.Cut(kv, "=")
+		if !ok {
+			continue
+		}
+		switch {
+		case strings.EqualFold(key, "DEADWOOD_GITHUB_TOKEN"):
+			continue
+		case strings.EqualFold(key, "GIT_OPTIONAL_LOCKS"),
+			strings.EqualFold(key, "GIT_TERMINAL_PROMPT"),
+			strings.EqualFold(key, "GIT_PAGER"),
+			strings.EqualFold(key, "LC_ALL"):
+			continue
+		case strings.EqualFold(key, "GIT_CEILING_DIRECTORIES"):
+			incomingCeiling = value
+			continue
+		}
+		env = append(env, kv)
+	}
+
+	env = append(env,
 		"GIT_TERMINAL_PROMPT=0",
-		// Read-only commands have no business taking the index lock.
-		"GIT_OPTIONAL_LOCKS=0",
 		"GIT_PAGER=cat",
-		// Keep diagnostics in English so error matching stays reliable.
 		"LC_ALL=C",
 	)
+	if !mutating {
+		env = append(env, "GIT_OPTIONAL_LOCKS=0")
+	}
+
+	ceiling := incomingCeiling
+	if ceiling == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			ceiling = home
+		}
+	}
+	if ceiling != "" {
+		env = append(env, "GIT_CEILING_DIRECTORIES="+ceiling)
+	}
+	return env
 }
 
 // lines splits git output into records, discarding the empty trailing record
@@ -122,16 +203,27 @@ const (
 	fieldSepPretty     = "%x1f"
 )
 
-// validateRefArgument rejects names git would parse as an option. Ref names
-// cannot begin with a dash, so anything that does is a caller bug or an
-// injection attempt rather than a real branch.
+const refForbidden = "~^:?*[]\\"
+
+// validateRefArgument rejects names git would parse as an option or a rev
+// walk. Ref names cannot begin with a dash; ".." would turn AheadBehind's
+// `base...branch` argument into an extra range.
 func validateRefArgument(name string) error {
 	switch {
 	case name == "":
 		return errors.New("branch name is empty")
 	case strings.HasPrefix(name, "-"):
 		return fmt.Errorf("refusing to use %q as a branch name: it would be read as an option", name)
-	default:
-		return nil
+	case strings.Contains(name, ".."):
+		return fmt.Errorf("refusing to use %q as a branch name: it contains '..'", name)
 	}
+	for _, r := range name {
+		if r < 32 || r == 127 || unicode.IsSpace(r) {
+			return fmt.Errorf("refusing to use %q as a branch name: it contains a control or space character", name)
+		}
+		if strings.ContainsRune(refForbidden, r) {
+			return fmt.Errorf("refusing to use %q as a branch name: it contains %q", name, r)
+		}
+	}
+	return nil
 }

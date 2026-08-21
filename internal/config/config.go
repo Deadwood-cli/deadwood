@@ -39,23 +39,35 @@ type file struct {
 	BackupRetentionDays *int      `yaml:"backup_retention_days"`
 }
 
+// LoadResult is a parsed config plus the file it came from.
+type LoadResult struct {
+	Config Config
+	// Path is the file that was read. Empty means built-in Defaults() because
+	// no .deadwood.yml existed at the repo root.
+	Path string
+}
+
 // Load reads configuration for a repository. If explicitPath is set (--config),
 // that file is required. Otherwise .deadwood.yml at repoRoot is used when it
 // exists, and Defaults() when it does not.
-func Load(repoRoot, explicitPath string) (Config, error) {
+func Load(repoRoot, explicitPath string) (LoadResult, error) {
 	filePath := explicitPath
 	if filePath == "" {
 		filePath = filepath.Join(repoRoot, FileName)
 		_, err := os.Stat(filePath)
 		if errors.Is(err, os.ErrNotExist) {
-			return Defaults(), nil
+			return LoadResult{Config: Defaults()}, nil
 		}
 		if err != nil {
-			return Config{}, fmt.Errorf("stat config file %s: %w", filePath, err)
+			return LoadResult{}, fmt.Errorf("stat config file %s: %w", filePath, err)
 		}
 	}
 
-	return loadFile(filePath)
+	cfg, err := loadFile(filePath)
+	if err != nil {
+		return LoadResult{}, err
+	}
+	return LoadResult{Config: cfg, Path: filePath}, nil
 }
 
 func loadFile(filePath string) (Config, error) {

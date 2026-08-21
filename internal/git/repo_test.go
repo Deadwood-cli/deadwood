@@ -108,6 +108,10 @@ func TestValidateRefArgument(t *testing.T) {
 		"empty name":        {name: "", wantErr: true},
 		"leading dash":      {name: "-D", wantErr: true},
 		"long option shape": {name: "--force", wantErr: true},
+		"dot-dot range":     {name: "a..b", wantErr: true},
+		"triple-dot range":  {name: "a...b", wantErr: true},
+		"whitespace":        {name: "feat x", wantErr: true},
+		"revision magic":    {name: "main^", wantErr: true},
 	}
 
 	for label, tc := range tests {

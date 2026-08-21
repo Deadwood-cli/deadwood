@@ -69,7 +69,7 @@ func newScanCommand(global *globalOptions, deps *scanDeps) *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&opts.json, "json", false,
-		"emit machine-readable JSON instead of the human-readable report")
+		"emit machine-readable JSON (name, bucket, reason, confidence, commit) instead of the human report")
 
 	return cmd
 }
@@ -83,9 +83,13 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions, deps 
 	if err != nil {
 		return fmt.Errorf("not a git repository: %w", err)
 	}
-	cfg, err := config.Load(root, global.configPath)
+	loaded, err := config.Load(root, global.configPath)
 	if err != nil {
 		return err
+	}
+	cfg := loaded.Config
+	if len(cfg.ExcludePatterns) == 0 {
+		fmt.Fprintln(cmd.ErrOrStderr(), "warning: exclude_patterns is empty; default protected names (main, master, ...) are not excluded")
 	}
 	report, err := buildScan(ctx, root, cfg, deps, cmd.ErrOrStderr())
 	if err != nil {
@@ -98,6 +102,10 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions, deps 
 }
 
 func buildScan(ctx context.Context, repoPath string, cfg config.Config, deps *scanDeps, warnings io.Writer) (output.Report, error) {
+	return scanRepo(ctx, repoPath, cfg, deps, warnings, nil)
+}
+
+func scanRepo(ctx context.Context, repoPath string, cfg config.Config, deps *scanDeps, warnings io.Writer, only []string) (output.Report, error) {
 	if deps == nil {
 		deps = defaultScanDeps()
 	}
@@ -128,6 +136,19 @@ func buildScan(ctx context.Context, repoPath string, cfg config.Config, deps *sc
 	locals, err := git.ListLocalBranches(root)
 	if err != nil {
 		return output.Report{}, err
+	}
+	if len(only) > 0 {
+		wanted := make(map[string]struct{}, len(only))
+		for _, name := range only {
+			wanted[name] = struct{}{}
+		}
+		filtered := locals[:0]
+		for _, local := range locals {
+			if _, ok := wanted[local.Name]; ok {
+				filtered = append(filtered, local)
+			}
+		}
+		locals = filtered
 	}
 
 	remotes, err := deps.listRemotes(root)

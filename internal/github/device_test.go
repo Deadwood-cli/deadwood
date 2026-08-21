@@ -128,6 +128,29 @@ func TestWaitForTokenAccessDenied(t *testing.T) {
 	assert.ErrorIs(t, err, ErrAccessDenied)
 }
 
+func TestWaitForTokenHTTPError(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("upstream exploded"))
+	}))
+	t.Cleanup(srv.Close)
+
+	flow := NewDeviceFlow(srv.Client())
+	flow.TokenURL = srv.URL
+	flow.Sleep = func(time.Duration) {}
+
+	_, err := flow.WaitForToken(context.Background(), "test-client", DeviceCode{
+		DeviceCode: "device-abc",
+		ExpiresIn:  time.Minute,
+		Interval:   time.Millisecond,
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "HTTP 500")
+}
+
 func TestWaitForTokenExpired(t *testing.T) {
 	t.Parallel()
 
