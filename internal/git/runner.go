@@ -110,7 +110,8 @@ func runWith(repoPath string, mutating bool, args ...string) (string, error) {
 	full = append(full, "-C", repoPath, "--no-pager")
 	full = append(full, args...)
 
-	cmd := exec.Command(gitBinary(), full...)
+	// gitBinary is a PATH lookup of git/git.exe, never a shell string.
+	cmd := exec.Command(gitBinary(), full...) //nolint:gosec // argv slice; binary from LookPath
 	cmd.Env = commandEnv(mutating)
 
 	var stdout, stderr bytes.Buffer

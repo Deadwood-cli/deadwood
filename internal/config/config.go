@@ -41,6 +41,7 @@ type file struct {
 
 // LoadResult is a parsed config plus the file it came from.
 type LoadResult struct {
+	// Config is the effective configuration after defaults and the file are applied.
 	Config Config
 	// Path is the file that was read. Empty means built-in Defaults() because
 	// no .deadwood.yml existed at the repo root.
