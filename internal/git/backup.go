@@ -64,7 +64,7 @@ func CreateBackupRef(repoPath, branch string) error {
 	}
 
 	ref := backupRefName(branch)
-	if _, err := run(repoPath, "update-ref", ref, tip); err != nil {
+	if _, err := runMutating(repoPath, "update-ref", "-m", "deadwood backup", ref, tip); err != nil {
 		return fmt.Errorf("creating backup ref %s: %w", ref, err)
 	}
 
@@ -146,7 +146,7 @@ func RestoreFromBackup(repoPath, branch string) error {
 
 	// git branch refuses to overwrite an existing branch, which is what we want:
 	// restoring must never clobber work that is already there.
-	if _, err := run(repoPath, "branch", branch, ref); err != nil {
+	if _, err := runMutating(repoPath, "branch", branch, ref); err != nil {
 		return fmt.Errorf("restoring branch %q: %w", branch, err)
 	}
 	return nil
@@ -160,7 +160,7 @@ func DeleteBackupRef(repoPath, branch string) error {
 	if err := validateRefArgument(branch); err != nil {
 		return err
 	}
-	if _, err := run(repoPath, "update-ref", "-d", backupRefName(branch)); err != nil {
+	if _, err := runMutating(repoPath, "update-ref", "-d", backupRefName(branch)); err != nil {
 		return fmt.Errorf("deleting backup ref for %q: %w", branch, err)
 	}
 	return nil

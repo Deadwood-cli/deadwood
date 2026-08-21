@@ -73,6 +73,9 @@ func TestWriteJSON(t *testing.T) {
 	assert.Equal(t, 1, payload.Counts["needs_review"])
 	assert.Equal(t, 1, payload.Counts["protected"])
 	require.Len(t, payload.Branches, 3)
+	assert.Equal(t, "abc123", payload.Branches[0].LastCommitSHA)
+	assert.Equal(t, "2026-03-15T00:00:00Z", payload.Branches[0].LastCommitDate)
+	assert.Equal(t, 2, payload.Branches[1].AheadCount)
 }
 
 func sampleReport() Report {
@@ -82,7 +85,11 @@ func sampleReport() Report {
 		LocalOnly:     true,
 		Results: []classify.BranchResult{
 			{
-				Branch:     classify.BranchInfo{Name: "feature-a", LastCommitDate: now},
+				Branch: classify.BranchInfo{
+					Name:           "feature-a",
+					LastCommitSHA:  "abc123",
+					LastCommitDate: now,
+				},
 				Bucket:     classify.BucketSafeDelete,
 				Reason:     "fully merged into main, remote deleted",
 				Confidence: classify.ConfidenceHigh,

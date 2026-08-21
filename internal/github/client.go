@@ -7,9 +7,17 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	gh "github.com/google/go-github/v63/github"
 )
+
+// httpTimeout bounds GitHub API calls. Device flow uses its own client.
+const httpTimeout = 30 * time.Second
+
+func defaultHTTPClient() *http.Client {
+	return &http.Client{Timeout: httpTimeout}
+}
 
 // ClientOptions configure a go-github client. BaseURL is for tests against
 // httptest.Server; production leaves it empty.
@@ -23,7 +31,7 @@ type ClientOptions struct {
 func NewClient(token string, opts ClientOptions) *gh.Client {
 	httpClient := opts.HTTP
 	if httpClient == nil {
-		httpClient = http.DefaultClient
+		httpClient = defaultHTTPClient()
 	}
 	client := gh.NewClient(httpClient).WithAuthToken(token)
 	if opts.BaseURL != "" {

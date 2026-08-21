@@ -29,14 +29,14 @@ jobs:
           - os: windows-latest
             test-flags: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Deliberately not go-version-file. Go's linker only emits the LC_UUID
       # load command by default from 1.24 (golang/go#68678), and the dyld on
       # current macOS refuses to launch a binary without one, so a test binary
       # built by the 1.22 declared in go.mod aborts before running. The
       # minimum-go job below still holds us to that declared floor.
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: stable
           cache: true
@@ -62,9 +62,9 @@ jobs:
     name: minimum go version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -83,13 +83,20 @@ jobs:
     name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: stable
           cache: true
 
-      - uses: golangci/golangci-lint-action@v8
+      # v9 uses Node 24; v8 still requires Node 20, which GitHub Actions now rejects.
+      # Pin the peeled commit SHA of the annotated v9.3.0 tag, not the tag object.
+      # verify defaults to true and runs `golangci-lint config verify`, which
+      # downloads a JSON schema from golangci-lint.run and times out in CI.
+      # v2.1.6 was built with Go 1.24 and panics type-checking the Go 1.27
+      # stdlib from setup-go's `stable` toolchain.
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: latest
+          version: v2.13.1
+          verify: false

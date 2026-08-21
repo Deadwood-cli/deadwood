@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/Deadwood-cli/deadwood/internal/auth"
 	ghub "github.com/Deadwood-cli/deadwood/internal/github"
@@ -15,13 +16,17 @@ const authLong = `Manage the GitHub credentials deadwood uses to check remote br
 squash-merged pull requests.
 
 Tokens are stored in the OS keychain, never on disk in plaintext. In environments
-without a keychain, set DEADWOOD_GITHUB_TOKEN instead.`
+without a keychain, set DEADWOOD_GITHUB_TOKEN instead.
+
+The OAuth App requests the repo scope because private pull-request heads are
+otherwise invisible. Deadwood only reads the API; a stolen token can still write
+to GitHub. Prefer the OS keychain over the environment variable.`
 
 type authRuntime struct {
 	store     *auth.Store
 	flow      *ghub.DeviceFlow
 	login     func(ctx context.Context, token string) (string, error)
-	clientID  func() (string, error)
+	clientID  func(allowOverride bool) (string, error)
 	lookupEnv func(string) (string, bool)
 }
 
@@ -49,15 +54,19 @@ func newAuthCommand(_ *globalOptions, runtime *authRuntime) *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 
-	cmd.AddCommand(
-		&cobra.Command{
-			Use:   "login",
-			Short: "Authorize deadwood with GitHub via device flow",
-			Args:  cobra.NoArgs,
-			RunE: func(cmd *cobra.Command, _ []string) error {
-				return runAuthLogin(cmd, runtime)
-			},
+	login := &cobra.Command{
+		Use:   "login",
+		Short: "Authorize deadwood with GitHub via device flow",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runAuthLogin(cmd, runtime)
 		},
+	}
+	login.Flags().Bool("allow-client-id-override", false,
+		"use "+ghub.EnvClientID+" instead of the compiled OAuth client ID")
+
+	cmd.AddCommand(
+		login,
 		&cobra.Command{
 			Use:   "logout",
 			Short: "Remove the stored GitHub token from the keychain",
@@ -85,7 +94,17 @@ func runAuthLogin(cmd *cobra.Command, runtime *authRuntime) error {
 		ctx = context.Background()
 	}
 
-	clientID, err := runtime.clientID()
+	allowOverride, err := cmd.Flags().GetBool("allow-client-id-override")
+	if err != nil {
+		return err
+	}
+	if !allowOverride {
+		if id, ok := runtime.lookupEnv(ghub.EnvClientID); ok && strings.TrimSpace(id) != "" {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: ignoring %s; pass --allow-client-id-override to use it\n", ghub.EnvClientID)
+		}
+	}
+
+	clientID, err := runtime.clientID(allowOverride)
 	if err != nil {
 		return err
 	}
@@ -96,6 +115,8 @@ func runAuthLogin(cmd *cobra.Command, runtime *authRuntime) error {
 	}
 
 	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "OAuth client ID %s (scope %s). Deadwood only reads the GitHub API; this token can still write if stolen.\n",
+		clientID, ghub.Scope)
 	fmt.Fprintf(out, "Open %s and enter the code:\n\n  %s\n\nWaiting for authorization...\n",
 		code.VerificationURI, code.UserCode)
 

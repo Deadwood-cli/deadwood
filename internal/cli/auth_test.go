@@ -109,6 +109,8 @@ func TestAuthLoginDeviceFlow(t *testing.T) {
 	assert.Contains(t, stdout, "https://github.com/login/device")
 	assert.Contains(t, stdout, "WDJB-MJHT")
 	assert.Contains(t, stdout, "logged in as octocat")
+	assert.Contains(t, stdout, "OAuth client ID test-client")
+	assert.Contains(t, stdout, "scope repo")
 	assert.False(t, strings.Contains(stdout, "gho-test-not-a-real-token"))
 	assert.False(t, strings.Contains(stderr, "gho-test-not-a-real-token"))
 
@@ -117,9 +119,44 @@ func TestAuthLoginDeviceFlow(t *testing.T) {
 	assert.Equal(t, "gho-test-not-a-real-token", got.Value)
 }
 
+func TestAuthLoginWarnsWhenClientIDEnvIgnored(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/device/code", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"device_code":      "device-abc",
+			"user_code":        "WDJB-MJHT",
+			"verification_uri": "https://github.com/login/device",
+			"expires_in":       900,
+			"interval":         1,
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "gho-test-not-a-real-token"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	flow := ghub.NewDeviceFlow(srv.Client())
+	flow.CodeURL = srv.URL + "/device/code"
+	flow.TokenURL = srv.URL + "/token"
+	flow.Sleep = func(time.Duration) {}
+
+	runtime := mockAuthRuntime(map[string]string{ghub.EnvClientID: "attacker-app"})
+	runtime.flow = flow
+	runtime.login = func(context.Context, string) (string, error) { return "octocat", nil }
+	runtime.clientID = func(allow bool) (string, error) {
+		assert.False(t, allow)
+		return "test-client", nil
+	}
+
+	_, stderr, err := runAuth(t, runtime, "auth", "login")
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "ignoring "+ghub.EnvClientID)
+}
+
 func TestAuthLoginOutputNeverIncludesToken(t *testing.T) {
 	runtime := mockAuthRuntime(nil)
-	runtime.clientID = func() (string, error) { return "", assert.AnError }
+	runtime.clientID = func(bool) (string, error) { return "", assert.AnError }
 
 	stdout, stderr, err := runAuth(t, runtime, "auth", "login")
 
@@ -136,7 +173,7 @@ func mockAuthRuntime(env map[string]string) *authRuntime {
 		store:     auth.NewStore(auth.NewMemoryRing(), lookup),
 		flow:      ghub.NewDeviceFlow(nil),
 		login:     func(context.Context, string) (string, error) { return "", nil },
-		clientID:  func() (string, error) { return "test-client", nil },
+		clientID:  func(bool) (string, error) { return "test-client", nil },
 		lookupEnv: lookup,
 	}
 }

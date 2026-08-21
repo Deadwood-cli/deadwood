@@ -119,8 +119,8 @@ func (r *repo) git(args ...string) string {
 func (r *repo) tryGit(extraEnv []string, args ...string) (string, error) {
 	r.t.Helper()
 
-	cmd := exec.Command(binary, append([]string{"-C", r.dir}, args...)...)
-	cmd.Env = append(commandEnv(), extraEnv...)
+	cmd := exec.Command(gitBinary(), append([]string{"-C", r.dir}, args...)...) //nolint:gosec // test fixture; argv slice
+	cmd.Env = append(commandEnv(true), extraEnv...)
 
 	out, err := cmd.CombinedOutput()
 	text := strings.TrimSpace(string(out))
@@ -208,8 +208,8 @@ func (r *repo) addOrigin(branches ...string) string {
 	r.t.Helper()
 
 	bare := filepath.Join(r.t.TempDir(), "origin.git")
-	cmd := exec.Command(binary, "init", "--bare", "--initial-branch="+defaultBranchName, bare)
-	cmd.Env = commandEnv()
+	cmd := exec.Command(gitBinary(), "init", "--bare", "--initial-branch="+defaultBranchName, bare) //nolint:gosec // test fixture; argv slice
+	cmd.Env = commandEnv(true)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		r.t.Fatalf("fixture: creating bare origin: %v: %s", err, out)
 	}

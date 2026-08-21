@@ -38,7 +38,7 @@ func DeleteBranch(repoPath, branch string, force bool) error {
 		return err
 	}
 
-	if _, err := run(repoPath, "branch", "-d", branch); err != nil {
+	if _, err := runMutating(repoPath, "branch", "-d", branch); err != nil {
 		if stderrContains(err, "not fully merged") {
 			return fmt.Errorf("deleting branch %q: %w", branch, ErrNotFullyMerged)
 		}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"text/tabwriter"
+	"time"
 
 	"github.com/Deadwood-cli/deadwood/internal/classify"
 )
@@ -139,10 +140,14 @@ type jsonReport struct {
 }
 
 type jsonBranch struct {
-	Name       string `json:"name"`
-	Bucket     string `json:"bucket"`
-	Reason     string `json:"reason"`
-	Confidence string `json:"confidence"`
+	Name           string `json:"name"`
+	Bucket         string `json:"bucket"`
+	Reason         string `json:"reason"`
+	Confidence     string `json:"confidence"`
+	LastCommitSHA  string `json:"last_commit_sha,omitempty"`
+	LastCommitDate string `json:"last_commit_date,omitempty"`
+	AheadCount     int    `json:"ahead"`
+	BehindCount    int    `json:"behind"`
 }
 
 func writeJSON(w io.Writer, report Report) error {
@@ -160,15 +165,26 @@ func writeJSON(w io.Writer, report Report) error {
 	}
 	for _, result := range report.Results {
 		payload.Branches = append(payload.Branches, jsonBranch{
-			Name:       result.Branch.Name,
-			Bucket:     string(result.Bucket),
-			Reason:     result.Reason,
-			Confidence: result.Confidence,
+			Name:           result.Branch.Name,
+			Bucket:         string(result.Bucket),
+			Reason:         result.Reason,
+			Confidence:     result.Confidence,
+			LastCommitSHA:  result.Branch.LastCommitSHA,
+			LastCommitDate: formatJSONTime(result.Branch.LastCommitDate),
+			AheadCount:     result.Branch.AheadCount,
+			BehindCount:    result.Branch.BehindCount,
 		})
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(payload)
+}
+
+func formatJSONTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 func countByBucket(results []classify.BranchResult) map[classify.Bucket]int {

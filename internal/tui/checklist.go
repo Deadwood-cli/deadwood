@@ -175,6 +175,11 @@ func Run(items []Item, in io.Reader, out io.Writer) (selected []Item, cancelled 
 	return model.Selected(), false, nil
 }
 
+// InputIsTerminal reports whether in is an interactive terminal.
+func InputIsTerminal(in io.Reader) bool {
+	return isTerminal(in)
+}
+
 func isTerminal(in io.Reader) bool {
 	f, ok := in.(*os.File)
 	if !ok {

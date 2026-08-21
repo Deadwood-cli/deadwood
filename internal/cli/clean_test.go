@@ -32,7 +32,7 @@ func TestCleanDryRunFalseDeletesMerged(t *testing.T) {
 	chdir(t, r.dir)
 	tip := r.git("rev-parse", "refs/heads/merged")
 
-	stdout, _, err := runCleanCLI(t, fixtureScanDeps(), nil, "", "clean", "--yes", "--dry-run=false")
+	stdout, _, err := runCleanCLI(t, fixtureScanDeps(), nil, "", "clean", "--yes", "--dry-run=false", "--allow-nontty")
 	require.NoError(t, err)
 	assert.Contains(t, stdout, "Deleted 1 branch")
 	assert.Contains(t, stdout, "merged")
@@ -53,7 +53,7 @@ func TestCleanSkipsUnmergedRatherThanForceDeleting(t *testing.T) {
 	r := localScanFixture(t)
 	chdir(t, r.dir)
 
-	stdout, _, err := runCleanCLI(t, fixtureScanDeps(), nil, "", "clean", "--yes", "--dry-run=false", "--include-needs-review")
+	stdout, _, err := runCleanCLI(t, fixtureScanDeps(), nil, "", "clean", "--yes", "--dry-run=false", "--include-needs-review", "--allow-nontty")
 	require.NoError(t, err)
 	assert.Contains(t, stdout, "Deleted 1 branch")
 	assert.Contains(t, stdout, "Skipped 1 branch")
@@ -134,6 +134,63 @@ func TestCleanNothingToClean(t *testing.T) {
 	stdout, _, err := runCleanCLI(t, fixtureScanDeps(), nil, "", "clean", "--yes")
 	require.NoError(t, err)
 	assert.Contains(t, stdout, "No branches to clean.")
+}
+
+func TestCleanRefusesNonttyDelete(t *testing.T) {
+	r := localScanFixture(t)
+	chdir(t, r.dir)
+
+	_, _, err := runCleanCLI(t, fixtureScanDeps(), nil, "", "clean", "--yes", "--dry-run=false")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--allow-nontty")
+	r.git("show-ref", "--verify", "refs/heads/merged")
+}
+
+func TestCleanReclassifySkipsWhenNoLongerSafe(t *testing.T) {
+	r := localScanFixture(t)
+	chdir(t, r.dir)
+	cd := defaultCleanDeps()
+	cd.beforeApply = func() {
+		r.git("checkout", "merged")
+		r.commit("unique work after scan")
+		r.git("checkout", "main")
+	}
+
+	stdout, _, err := runCleanCLI(t, fixtureScanDeps(), cd, "", "clean", "--yes", "--dry-run=false", "--allow-nontty")
+	require.NoError(t, err)
+	assert.Contains(t, stdout, "Skipped")
+	assert.Contains(t, stdout, "classification changed")
+	assert.Contains(t, stdout, "merged")
+	assert.True(t, r.hasRef("refs/heads/merged"))
+	assert.False(t, r.hasRef("refs/deadwood-backup/merged"))
+}
+
+func TestFilterStaleSelection(t *testing.T) {
+	selected := []tui.Item{
+		{Name: "safe", Bucket: classify.BucketSafeDelete},
+		{Name: "gone", Bucket: classify.BucketSafeDelete},
+		{Name: "review", Bucket: classify.BucketNeedsReview},
+	}
+	fresh := []classify.BranchResult{
+		{Branch: classify.BranchInfo{Name: "safe"}, Bucket: classify.BucketNeedsReview, Reason: "ahead"},
+		{Branch: classify.BranchInfo{Name: "review"}, Bucket: classify.BucketNeedsReview, Reason: "ahead"},
+	}
+
+	keep, skipped := filterStaleSelection(selected, fresh)
+	require.Len(t, keep, 1)
+	assert.Equal(t, "review", keep[0].Name)
+	require.Len(t, skipped, 2)
+}
+
+func TestCleanYesDryRunPrintsRepoContext(t *testing.T) {
+	r := localScanFixture(t)
+	chdir(t, r.dir)
+
+	stdout, _, err := runCleanCLI(t, fixtureScanDeps(), nil, "", "clean", "--yes")
+	require.NoError(t, err)
+	assert.Contains(t, stdout, "Repository:")
+	assert.Contains(t, stdout, "Default branch: main")
+	assert.Contains(t, stdout, "Exclude patterns:")
 }
 
 func TestChecklistItemsPrecheck(t *testing.T) {
