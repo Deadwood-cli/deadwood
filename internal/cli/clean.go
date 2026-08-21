@@ -133,7 +133,7 @@ func runClean(cmd *cobra.Command, global *globalOptions, opts *cleanOptions, sd 
 	}
 
 	if !opts.dryRun {
-		fmt.Fprintln(cmd.ErrOrStderr(), "warning: real deletion is not enabled yet; no branches were deleted")
+		return applyDeletes(cmd.OutOrStdout(), root, names)
 	}
 
 	return writeDryRunPlan(cmd.OutOrStdout(), names)
@@ -204,8 +204,7 @@ func confirmDeletes(in io.Reader, out io.Writer, names []string) (bool, error) {
 	return strings.TrimSpace(scanner.Text()) == "yes", nil
 }
 
-// writeDryRunPlan is the phase 8 apply step. It must never call
-// git.CreateBackupRef or git.DeleteBranch.
+// writeDryRunPlan reports what would be deleted without calling git.
 func writeDryRunPlan(w io.Writer, names []string) error {
 	noun := "branch"
 	if len(names) != 1 {
@@ -214,7 +213,64 @@ func writeDryRunPlan(w io.Writer, names []string) error {
 	fmt.Fprintf(w, "Dry-run: would delete %d %s (nothing was changed).\n", len(names), noun)
 	for _, name := range names {
 		fmt.Fprintf(w, "  %s\n", name)
-		fmt.Fprintf(w, "    backup would be refs/deadwood-backup/%s\n", name)
+		fmt.Fprintf(w, "    backup would be %s%s\n", git.BackupRefPrefix, name)
+	}
+	return nil
+}
+
+// applyDeletes backs up then safe-deletes each branch. CreateBackupRef is
+// required to succeed before DeleteBranch; a failed backup skips that branch.
+// git branch -d failures are reported, never escalated to -D.
+func applyDeletes(w io.Writer, repoPath string, names []string) error {
+	var deleted []string
+	type skippedBranch struct {
+		name   string
+		reason string
+	}
+	var skipped []skippedBranch
+
+	for _, name := range names {
+		if err := git.CreateBackupRef(repoPath, name); err != nil {
+			skipped = append(skipped, skippedBranch{name, err.Error()})
+			continue
+		}
+		if err := git.DeleteBranch(repoPath, name, false); err != nil {
+			skipped = append(skipped, skippedBranch{name, err.Error()})
+			continue
+		}
+		deleted = append(deleted, name)
+	}
+
+	if len(deleted) == 0 && len(skipped) == 0 {
+		fmt.Fprintln(w, "Nothing was deleted.")
+		return nil
+	}
+
+	if len(deleted) > 0 {
+		noun := "branch"
+		if len(deleted) != 1 {
+			noun = "branches"
+		}
+		fmt.Fprintf(w, "Deleted %d %s.\n", len(deleted), noun)
+		for _, name := range deleted {
+			fmt.Fprintf(w, "  %s\n", name)
+			fmt.Fprintf(w, "    backup: %s%s\n", git.BackupRefPrefix, name)
+		}
+	}
+
+	if len(skipped) > 0 {
+		noun := "branch"
+		if len(skipped) != 1 {
+			noun = "branches"
+		}
+		fmt.Fprintf(w, "Skipped %d %s:\n", len(skipped), noun)
+		for _, item := range skipped {
+			fmt.Fprintf(w, "  %s: %s\n", item.name, item.reason)
+		}
+	}
+
+	if len(deleted) > 0 {
+		fmt.Fprintln(w, "Restore with `deadwood undo <branch>`.")
 	}
 	return nil
 }

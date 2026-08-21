@@ -104,6 +104,13 @@ func (r *testRepo) branchWithCommit(branch, message string) {
 	r.git("checkout", previous)
 }
 
+func (r *testRepo) hasRef(ref string) bool {
+	r.t.Helper()
+	cmd := exec.Command("git", "-C", r.dir, "show-ref", "--verify", "--quiet", ref)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C")
+	return cmd.Run() == nil
+}
+
 func (r *testRepo) mergeNoFF(branch string) {
 	r.t.Helper()
 	r.git("merge", "--no-ff", "-m", "merge "+branch, branch)

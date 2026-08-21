@@ -4,12 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
-// backupRefPrefix namespaces deadwood's backup refs. Living outside refs/heads
+// BackupRefPrefix namespaces deadwood's backup refs. Living outside refs/heads
 // keeps them off `git branch` listings while still pinning the commits against
 // garbage collection.
-const backupRefPrefix = "refs/deadwood-backup/"
+const BackupRefPrefix = "refs/deadwood-backup/"
 
 var (
 	// ErrBackupMissing reports that no backup ref exists for a branch. Deleting
@@ -22,7 +23,24 @@ var (
 	ErrBackupStale = errors.New("backup ref does not point at the branch's current tip")
 )
 
-func backupRefName(branch string) string { return backupRefPrefix + branch }
+func backupRefName(branch string) string { return BackupRefPrefix + branch }
+
+// BackupInfo is one refs/deadwood-backup entry, for `deadwood undo --list`.
+type BackupInfo struct {
+	Branch     string
+	SHA        string
+	CommitDate time.Time
+	Subject    string
+}
+
+var backupFormat = strings.Join([]string{
+	"%(refname)",
+	"%(objectname)",
+	"%(committerdate:iso-strict)",
+	"%(contents:subject)",
+}, fieldSepForEachRef)
+
+const backupFieldCount = 4
 
 // CreateBackupRef records a branch's current tip under refs/deadwood-backup/
 // so the branch can be recreated after deletion.
@@ -62,17 +80,52 @@ func CreateBackupRef(repoPath, branch string) error {
 
 // ListBackupRefs returns the branch names that have a backup ref, sorted.
 func ListBackupRefs(repoPath string) ([]string, error) {
-	out, err := run(repoPath, "for-each-ref", "--sort=refname", "--format=%(refname)", backupRefPrefix)
+	details, err := ListBackupDetails(repoPath)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(details))
+	for i, info := range details {
+		names[i] = info.Branch
+	}
+	return names, nil
+}
+
+// ListBackupDetails returns backup refs with the commit they pin, sorted by name.
+func ListBackupDetails(repoPath string) ([]BackupInfo, error) {
+	out, err := run(repoPath, "for-each-ref", "--sort=refname", "--format="+backupFormat, BackupRefPrefix)
 	if err != nil {
 		return nil, err
 	}
 
 	records := lines(out)
-	names := make([]string, 0, len(records))
-	for _, ref := range records {
-		names = append(names, strings.TrimPrefix(ref, backupRefPrefix))
+	infos := make([]BackupInfo, 0, len(records))
+	for _, record := range records {
+		info, err := parseBackupRecord(record)
+		if err != nil {
+			return nil, err
+		}
+		infos = append(infos, info)
 	}
-	return names, nil
+	return infos, nil
+}
+
+func parseBackupRecord(record string) (BackupInfo, error) {
+	fields := strings.Split(record, fieldSep)
+	if len(fields) != backupFieldCount {
+		return BackupInfo{}, fmt.Errorf("parsing backup record %q: got %d fields, want %d",
+			record, len(fields), backupFieldCount)
+	}
+	committed, err := time.Parse(time.RFC3339, fields[2])
+	if err != nil {
+		return BackupInfo{}, fmt.Errorf("parsing commit date for backup %q: %w", fields[0], err)
+	}
+	return BackupInfo{
+		Branch:     strings.TrimPrefix(fields[0], BackupRefPrefix),
+		SHA:        fields[1],
+		CommitDate: committed,
+		Subject:    fields[3],
+	}, nil
 }
 
 // RestoreFromBackup recreates a branch at the commit its backup ref records.

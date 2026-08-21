@@ -54,6 +54,22 @@ func TestListBackupRefs(t *testing.T) {
 	assert.Equal(t, []string{"feat/one", "two"}, got)
 }
 
+func TestListBackupDetailsIncludesCommitSubject(t *testing.T) {
+	t.Parallel()
+
+	r := newRepo(t)
+	tip := r.branchWithCommit("feature", "work worth keeping")
+	require.NoError(t, CreateBackupRef(r.dir, "feature"))
+
+	got, err := ListBackupDetails(r.dir)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "feature", got[0].Branch)
+	assert.Equal(t, tip, got[0].SHA)
+	assert.Equal(t, "work worth keeping", got[0].Subject)
+	assert.False(t, got[0].CommitDate.IsZero())
+}
+
 func TestListBackupRefsWhenNoneExist(t *testing.T) {
 	t.Parallel()
 
