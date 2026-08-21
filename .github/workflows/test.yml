@@ -92,6 +92,9 @@ jobs:
 
       # v9 uses Node 24; v8 still requires Node 20, which GitHub Actions now rejects.
       # Pin the peeled commit SHA of the annotated v9.3.0 tag, not the tag object.
+      # verify defaults to true and runs `golangci-lint config verify`, which
+      # downloads a JSON schema from golangci-lint.run and times out in CI.
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.1.6
+          verify: false
